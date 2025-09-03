@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0b0b"/>
+<title>Sneeze Counter</title>
+<style>
+  :root{
+    --bg:#0b0b0b;
+    --card:#151515;
+    --muted:#bbbbbb;
+    --border:#2a2a2a;
+    --accent:#3aa7ff;
+    --good:#00b386;
+    --bad:#e45d5d;
+  }
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  body{margin:0;background:var(--bg);color:#fff;line-height:1.35}
+  header{position:sticky;top:0;background:rgba(11,11,11,.9);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 16px}
+  header h1{margin:0;font-size:20px}
+  main{padding:16px;max-width:800px;margin:0 auto}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;flex:1;min-width:260px}
+  .label{font-size:12px;color:var(--muted)}
+  .name-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  input[type="text"]{background:#0d0d0d;border:1px solid var(--border);border-radius:10px;color:#fff;padding:10px 12px;width:100%}
+  .count{font-size:40px;font-weight:700;margin:4px 0 12px}
+  .btns{display:flex;gap:8px;flex-wrap:wrap}
+  button{border:1px solid var(--border);background:#0f0f0f;color:#fff;border-radius:12px;padding:10px 14px;font-weight:600}
+  button:active{transform:translateY(1px)}
+  .primary{border-color:#1e5aa6}
+  .good{border-color:#0a6c55}
+  .bad{border-color:#7b2d2d}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .history{margin-top:18px}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th,td{border-bottom:1px solid var(--border);padding:8px 6px;text-align:left}
+  tfoot td{font-weight:700}
+  .muted{color:var(--muted)}
+  .pill{border:1px solid var(--border);padding:6px 10px;border-radius:999px;font-size:12px;color:var(--muted)}
+  .grid{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+  .notice{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>😤 Sneeze Counter</h1>
+</header>
+<main>
+  <section class="row">
+    <div class="card" id="personA">
+      <div class="name-row"><div class="label">Name</div></div>
+      <input id="nameA" type="text" value="Ryan" aria-label="Name for person A">
+      <div class="count" id="countA">0</div>
+      <div class="btns">
+        <button class="primary" onclick="bump('A',1)">+1</button>
+        <button onclick="bump('A',5)">+5</button>
+        <button class="bad" onclick="bump('A',-1)">-1</button>
+      </div>
+    </div>
+    <div class="card" id="personB">
+      <div class="name-row"><div class="label">Name</div></div>
+      <input id="nameB" type="text" value="Sam" aria-label="Name for person B">
+      <div class="count" id="countB">0</div>
+      <div class="btns">
+        <button class="primary" onclick="bump('B',1)">+1</button>
+        <button onclick="bump('B',5)">+5</button>
+        <button class="bad" onclick="bump('B',-1)">-1</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="grid">
+      <div>
+        <div class="label">Today</div>
+        <div><span id="todayStr" class="pill"></span> <span class="pill" id="totalTodayPill"></span></div>
+      </div>
+      <div class="btns">
+        <button onclick="undo()">Undo</button>
+        <button class="good" onclick="resetToday()">Reset Today</button>
+      </div>
+    </div>
+    <div class="notice">Counts reset automatically each new day. All history stays saved on your device.</div>
+  </section>
+
+  <section class="card history">
+    <div class="grid">
+      <div><div class="label">History (last 14 days)</div></div>
+      <div class="btns">
+        <button onclick="exportCSV()">Export CSV</button>
+        <button onclick="backup()">Backup</button>
+        <label class="pill" style="cursor:pointer;">
+          Import
+          <input id="importFile" type="file" accept=".json" style="display:none" onchange="restore(this.files[0])">
+        </label>
+      </div>
+    </div>
+    <table id="histTable">
+      <thead><tr><th>Date</th><th id="colA">Ryan</th><th id="colB">Sam</th><th>Total</th></tr></thead>
+      <tbody></tbody>
+      <tfoot><tr><td>Totals</td><td id="sumA">0</td><td id="sumB">0</td><td id="sumTotal">0</td></tr></tfoot>
+    </table>
+  </section>
+
+  <p class="muted notice">Add this to your Home Screen to use it like an app. (Share → Add to Home Screen on iPhone.)</p>
+</main>
+
+<script>
+const fmtDate = (d) => d.toISOString().slice(0,10);
+const today = () => fmtDate(new Date());
+const STORAGE_KEY = 'sneezeCounterDataV1';
+const DEFAULT = { people:['Ryan','Sam'], records:{} , actions:[] }; // actions: stack for undo
+
+function load(){
+  let data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+  if(!data){ data = DEFAULT; }
+  data.people = data.people && data.people.length===2 ? data.people : ['Ryan','Sam'];
+  data.records = data.records || {};
+  data.actions = data.actions || [];
+  return data;
+}
+function save(data){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+
+function ensureToday(data){
+  const t = today();
+  if(!data.records[t]) data.records[t] = {[data.people[0]]:0, [data.people[1]]:0};
+  for(const day in data.records){
+    const rec = data.records[day];
+    data.people.forEach(p => { if(!(p in rec)) rec[p]=0; });
+  }
+}
+
+function render(){
+  const data = load();
+  ensureToday(data);
+  document.getElementById('nameA').value = data.people[0];
+  document.getElementById('nameB').value = data.people[1];
+  document.getElementById('colA').textContent = data.people[0];
+  document.getElementById('colB').textContent = data.people[1];
+
+  const t = today();
+  document.getElementById('countA').textContent = data.records[t][data.people[0]]||0;
+  document.getElementById('countB').textContent = data.records[t][data.people[1]]||0;
+  document.getElementById('todayStr').textContent = t;
+  document.getElementById('totalTodayPill').textContent = 'Total: ' + ((data.records[t][data.people[0]]||0) + (data.records[t][data.people[1]]||0));
+
+  const tbody = document.querySelector('#histTable tbody');
+  tbody.innerHTML='';
+  const days = Object.keys(data.records).sort().reverse().slice(0,14);
+  let sumA=0,sumB=0,sumT=0;
+  for(const d of days){
+    const a = data.records[d][data.people[0]]||0;
+    const b = data.records[d][data.people[1]]||0;
+    const tot = a+b;
+    sumA+=a; sumB+=b; sumT+=tot;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${d}</td><td>${a}</td><td>${b}</td><td>${tot}</td>`;
+    tbody.appendChild(tr);
+  }
+  document.getElementById('sumA').textContent = sumA;
+  document.getElementById('sumB').textContent = sumB;
+  document.getElementById('sumTotal').textContent = sumT;
+}
+function bump(which,delta){
+  const data = load();
+  ensureToday(data);
+  const t = today();
+  const name = which==='A'? data.people[0] : data.people[1];
+  const before = data.records[t][name]||0;
+  const after = Math.max(0, before + delta);
+  data.records[t][name]=after;
+  data.actions.push({t,name,delta: (after-before)});
+  save(data); render();
+}
+function undo(){
+  const data = load();
+  const last = data.actions.pop();
+  if(!last){ alert('Nothing to undo.'); return; }
+  ensureToday(data);
+  const rec = data.records[last.t] || (data.records[last.t]={});
+  rec[last.name] = Math.max(0, (rec[last.name]||0) - last.delta);
+  save(data); render();
+}
+function resetToday(){
+  const data = load();
+  ensureToday(data);
+  const t = today();
+  const a = data.people[0], b=data.people[1];
+  const oldA = data.records[t][a]||0;
+  const oldB = data.records[t][b]||0;
+  if(oldA+oldB===0) return;
+  if(!confirm('Reset today\\'s counts?')) return;
+  data.records[t][a]=0; data.records[t][b]=0;
+  data.actions.push({t,name:a,delta:oldA});
+  data.actions.push({t,name:b,delta:oldB});
+  save(data); render();
+}
+function exportCSV(){
+  const data = load();
+  const header = ['Date', data.people[0], data.people[1], 'Total'];
+  const lines = [header.join(',')];
+  const days = Object.keys(data.records).sort();
+  for(const d of days){
+    const a = data.records[d][data.people[0]]||0;
+    const b = data.records[d][data.people[1]]||0;
+    lines.push([d,a,b,a+b].join(','));
+  }
+  const blob = new Blob([lines.join('\\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'sneeze-history.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+function backup(){
+  const data = load();
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'sneeze-backup.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+function restore(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const obj = JSON.parse(e.target.result);
+      if(!obj.records || !obj.people) throw new Error('Bad file');
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+      alert('Import complete.'); render();
+    }catch(err){ alert('Import failed: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+document.getElementById('nameA').addEventListener('change', (e)=>{
+  const data = load(); data.people[0]=e.target.value||'Person A'; save(data); render();
+});
+document.getElementById('nameB').addEventListener('change', (e)=>{
+  const data = load(); data.people[1]=e.target.value||'Person B'; save(data); render();
+});
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js');
+  });
+}
+(function init(){
+  const data = load();
+  ensureToday(data);
+  save(data);
+  render();
+})();
+</script>
+</body>
+</html>
